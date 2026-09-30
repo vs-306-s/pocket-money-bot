@@ -1,0 +1,13 @@
+.git
+.gitignore
+.venv
+venv
+__pycache__
+*.pyc
+*.log
+data
+*.xlsx
+gh_token.txt
+config.json
+.env
+README.md

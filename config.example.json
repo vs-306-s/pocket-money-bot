@@ -1,0 +1,29 @@
+{
+  "bot_token": "ЗАМЕНИТЕ_НА_ТОКЕН_ОТ_BOTFATHER",
+  "owner_ids": [],
+  "proxy": null,
+  "secret": "pocket-money-bot-secret",
+
+  "default_start_sum": 0,
+  "default_currency": "₽",
+  "default_rates": {
+    "5": 300,
+    "4": 150,
+    "3": -100,
+    "2": -300
+  },
+  "default_coefficients": {
+    "математика": 2,
+    "физика": 1.5,
+    "русский язык": 1.5
+  },
+
+  "tz_offset": 3,
+  "max_photos": 8,
+  "ai": {
+    "temperature": 0.2,
+    "max_tokens": 4000,
+    "timeout": 180
+  },
+  "log_level": "INFO"
+}
