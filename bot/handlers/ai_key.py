@@ -41,14 +41,15 @@ async def show_ai(message: Message, user_id: int) -> None:
 
 
 @router.message(Command("key", "ai", "provider", "model"))
-@router.message(F.text == kb.BTN_AI)
 async def cmd_ai(message: Message, command: CommandObject, state: FSMContext, db_user: dict) -> None:
+    """Команды: /key [ключ], /model <модель>, /ai, /provider."""
     user_id = int(db_user["user_id"])
-    name = (command.command or "").lower() if command else ""
-    args = ((command.args or "").strip() if command else "")
+    name = (command.command or "").lower()
+    args = (command.args or "").strip()
 
     if name == "key" and args:
-        await _store_key(message, state, user_id, args)
+        await state.clear()
+        await store_key(message, state, user_id, args)
         return
     if name == "model" and args:
         ai = db.set_ai(user_id, model=args)
@@ -57,6 +58,13 @@ async def cmd_ai(message: Message, command: CommandObject, state: FSMContext, db
         return
     await state.clear()
     await show_ai(message, user_id)
+
+
+@router.message(F.text == kb.BTN_AI)
+async def btn_ai(message: Message, state: FSMContext, db_user: dict) -> None:
+    """Кнопка нижнего меню «🤖 Нейросеть»."""
+    await state.clear()
+    await show_ai(message, int(db_user["user_id"]))
 
 
 @router.callback_query(F.data == "ai:menu")
@@ -106,11 +114,15 @@ async def cb_pick_provider(call: CallbackQuery, state: FSMContext, db_user: dict
 async def cb_ask_key(call: CallbackQuery, state: FSMContext, db_user: dict) -> None:
     ai = db.get_ai(int(db_user["user_id"]))
     await call.answer()
+    # Состояние включаем ВСЕГДА: иначе присланный ключ попадёт в «не понял».
     if not ai.get("provider"):
         await call.message.answer(
-            "🔑 <b>Пришли API-ключ одним сообщением.</b>\n\n"
-            "Сначала выбери провайдера, если ещё не выбрал.",
+            "🔑 <b>Пришли API-ключ одним сообщением</b> — я его приму и сразу проверю.\n\n"
+            "Провайдера выберу сам (OpenRouter), но если нужен другой — нажми кнопку ниже:\n"
+            "• 🆓 бесплатно и с чтением фото — OpenRouter, Google Gemini, Groq;\n"
+            "• 📖 где взять ключ — команда /guide.",
             reply_markup=kb.providers_menu())
+        await state.set_state(Flow.ai_key)
         return
     await call.message.answer(
         "🔑 <b>Пришли API-ключ одним сообщением.</b>\n\n"
@@ -188,10 +200,22 @@ async def got_key(message: Message, state: FSMContext, db_user: dict) -> None:
     key = (message.text or "").strip()
     if key == kb.BTN_CANCEL:
         return
-    await _store_key(message, state, int(db_user["user_id"]), key)
+    await store_key(message, state, int(db_user["user_id"]), key)
 
 
-async def _store_key(message: Message, state: FSMContext, user_id: int, key: str) -> None:
+@router.callback_query(F.data == "ai:key_here")
+async def cb_key_shortcut(call: CallbackQuery, state: FSMContext, db_user: dict) -> None:
+    """Кнопка «прислать ключ сюда» из подсказки fallback-хендлера."""
+    await call.answer()
+    await state.set_state(Flow.ai_key)
+    await call.message.answer(
+        "🔑 Жду ключ одним сообщением. Провайдера, если он не выбран, возьму OpenRouter — "
+        "потом можно сменить.",
+        reply_markup=kb.cancel_menu())
+
+
+async def store_key(message: Message, state: FSMContext, user_id: int, key: str) -> None:
+    """Сохраняет ключ, проверяет его и, если ждут фото, сразу их обрабатывает."""
     key = key.strip().strip('"').strip("'")
     try:
         await message.delete()
@@ -234,5 +258,16 @@ async def _store_key(message: Message, state: FSMContext, user_id: int, key: str
                              reply_markup=kb.ai_menu(True))
 
     if photos:
-        await message.answer("📸 А вот и твои фото — обрабатываю!",
-                             reply_markup=kb.retry_menu(has_key=True))
+        await message.answer("📸 А вот и твои фото — уже обрабатываю!")
+        try:
+            entries, note = await pipeline.recognize(user_id, photos)
+        except ai_module.AIError as error:
+            await message.answer(f"😕 Не смог прочитать фото: {utils.esc(str(error))}",
+                                 reply_markup=kb.retry_menu(has_key=True))
+        except Exception as error:  # noqa: BLE001
+            log.exception("ошибка распознавания после подключения ключа")
+            await message.answer(f"😕 Сбой при чтении фото ({utils.esc(type(error).__name__)}).",
+                                 reply_markup=kb.retry_menu(has_key=True))
+        else:
+            await pipeline.drop_photos(state)
+            await pipeline.show_preview(message, state, user_id, entries, note)

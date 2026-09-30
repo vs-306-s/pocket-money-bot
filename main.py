@@ -103,7 +103,7 @@ async def main() -> None:
     print(f"  Прокси:    {proxy or 'не используется'}")
     print(f"  Ставки по умолчанию: {config.get('default_rates')}")
     print(f"  Коэффициенты: {config.get('default_coefficients')}")
-    print(f"  Ключи нейросети подключает каждый пользователь сам (/key)")
+    print("  Ключи нейросети подключает каждый пользователь сам (/key)")
     print("=" * 60)
     if not ai_ready:
         print("  ⚠️  В config.json не заданы default_rates — оценки будут считаться по нулям.")
